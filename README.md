@@ -110,6 +110,8 @@ python -m streamlit run app.py
 
 The sidebar filters ticker, date range, source (GDELT news or Bluesky), and sentiment model. Tabs show an overview/dual-axis chart, linked positive/negative items, lag correlation with p-values and a scatter plot, time-split model/backtest results, and a live text analyzer. The live analyzer always provides VADER; it provides FinBERT probabilities once weights are available.
 
+On a fresh deployment with no generated CSVs, the dashboard offers **Collect live data** for a selected ticker. This runs the same pipeline as the command line, saves results to the app's local data directory, and reloads the dashboard. It may take a few minutes; providers can return empty results or rate-limit requests. Use **Refresh live data** in the sidebar to update the selected ticker later. Streamlit Cloud's local files are runtime data, so rerun collection if the app restarts and its generated files are cleared.
+
 Key outputs include:
 
 - `data/raw/`: collector CSVs and cache metadata.

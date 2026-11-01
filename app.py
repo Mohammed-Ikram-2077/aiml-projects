@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -14,7 +16,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from config import MODEL_NAME, PROCESSED_DIR, RAW_DIR, REPORTS_DIR
+from config import DEFAULT_CONFIG, MODEL_NAME, PROCESSED_DIR, RAW_DIR, REPORTS_DIR, ROOT_DIR
 from src.sentiment import finbert_scores, vader_scores
 
 
@@ -42,6 +44,57 @@ def ticker_file_key(ticker: str) -> str:
     return ticker.replace(".", "_")
 
 
+def run_live_pipeline(ticker: str) -> subprocess.CompletedProcess[str]:
+    """Run the existing collection/scoring pipeline for one selected ticker."""
+    return subprocess.run(
+        [
+            sys.executable,
+            "run_pipeline.py",
+            "--tickers",
+            ticker,
+            "--months",
+            str(DEFAULT_CONFIG.months),
+            "--force-collect",
+        ],
+        cwd=ROOT_DIR,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+
+
+def collect_live_data(ticker: str) -> None:
+    """Run live collection, show actionable logs on failure, and reload on success."""
+    try:
+        with st.spinner(f"Collecting live data and scoring {ticker}. This may take a few minutes…"):
+            result = run_live_pipeline(ticker)
+    except subprocess.TimeoutExpired:
+        st.error("The pipeline exceeded its 10-minute time limit. Try again later or run it locally for this ticker.")
+        return
+    except Exception as exc:
+        st.error(f"Could not start the collection pipeline: {exc}")
+        return
+
+    if result.returncode == 0:
+        try:
+            run_summary = json.loads((PROCESSED_DIR / "pipeline_summary.json").read_text(encoding="utf-8"))
+            counts = run_summary.get("tickers", {}).get(ticker, {})
+            st.success(
+                f"Finished {ticker}: {counts.get('news_rows', 0)} news headlines, "
+                f"{counts.get('social_rows', 0)} Bluesky posts, "
+                f"{counts.get('price_rows', 0)} price rows."
+            )
+        except (OSError, ValueError):
+            st.success(f"Finished collecting and scoring {ticker}.")
+        st.rerun()
+    else:
+        st.error("The pipeline did not complete. Check the logs below for the source error.")
+        logs = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+        with st.expander("Pipeline logs", expanded=True):
+            st.code(logs[-12000:] or "No logs were returned.")
+
+
 st.set_page_config(page_title="Financial Sentiment Lab", layout="wide")
 st.title("AI-Based Financial Market Sentiment Analysis")
 st.caption("Research dashboard: sentiment is noisy, correlations are not causal, and results are not financial advice.")
@@ -53,10 +106,14 @@ latest_tickers = set(summary.get("tickers", {}))
 available_tickers = [path.stem.removeprefix("sentiment_").replace("_", ".") for path in sentiment_paths]
 tickers = [ticker for ticker in available_tickers if not latest_tickers or ticker in latest_tickers]
 if not tickers:
-    st.info("No pipeline outputs found. From a terminal in this folder, run `python run_pipeline.py --demo` to create demo results.")
+    st.info("No pipeline outputs are stored in this deployment yet. Collect live data below to build the dashboard.")
+    ticker_to_collect = st.selectbox("Ticker", DEFAULT_CONFIG.tickers)
+    if st.button("Collect live data", type="primary"):
+        collect_live_data(ticker_to_collect)
     st.stop()
 
 with st.sidebar:
+    refresh_requested = False
     selected_ticker = st.selectbox("Ticker", tickers)
     ticker_key = ticker_file_key(selected_ticker)
     sentiment_path = PROCESSED_DIR / f"sentiment_{ticker_key}.csv"
@@ -68,6 +125,10 @@ with st.sidebar:
     available_names = [name for name, col in score_options.items() if col in score_candidates]
     selected_model = st.selectbox("Sentiment model", available_names or ["VADER"])
     selected_score = score_options[selected_model]
+    refresh_requested = st.button("Refresh live data", help="Fetch current headlines, Bluesky posts, and daily prices for this ticker.")
+
+if refresh_requested:
+    collect_live_data(selected_ticker)
 
 if "timestamp_utc" in data:
     data["timestamp_utc"] = pd.to_datetime(data["timestamp_utc"], utc=True, errors="coerce")
