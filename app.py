@@ -104,7 +104,7 @@ summary_path = PROCESSED_DIR / "pipeline_summary.json"
 summary = load_json(summary_path) if summary_path.exists() else {}
 latest_tickers = set(summary.get("tickers", {}))
 available_tickers = [path.stem.removeprefix("sentiment_").replace("_", ".") for path in sentiment_paths]
-tickers = [ticker for ticker in available_tickers if not latest_tickers or ticker in latest_tickers]
+tickers = sorted(set(DEFAULT_CONFIG.tickers) | latest_tickers | set(available_tickers))
 if not tickers:
     st.info("No pipeline outputs are stored in this deployment yet. Collect live data below to build the dashboard.")
     ticker_to_collect = st.selectbox("Ticker", DEFAULT_CONFIG.tickers)
@@ -117,15 +117,22 @@ with st.sidebar:
     selected_ticker = st.selectbox("Ticker", tickers)
     ticker_key = ticker_file_key(selected_ticker)
     sentiment_path = PROCESSED_DIR / f"sentiment_{ticker_key}.csv"
-    data = load_csv(sentiment_path)
-    source_choices = ["Both", "News", "Bluesky"]
-    selected_source = st.selectbox("Source", source_choices)
-    score_candidates = [col for col in ("finbert_score", "vader_score", "tfidf_score") if col in data and data[col].notna().any()]
-    score_options = {"FinBERT": "finbert_score", "VADER": "vader_score", "TF-IDF baseline": "tfidf_score"}
-    available_names = [name for name, col in score_options.items() if col in score_candidates]
-    selected_model = st.selectbox("Sentiment model", available_names or ["VADER"])
-    selected_score = score_options[selected_model]
-    refresh_requested = st.button("Refresh live data", help="Fetch current headlines, Bluesky posts, and daily prices for this ticker.")
+    data = load_csv(sentiment_path) if sentiment_path.exists() else pd.DataFrame()
+    if not data.empty:
+        source_choices = ["Both", "News", "Bluesky"]
+        selected_source = st.selectbox("Source", source_choices)
+        score_candidates = [col for col in ("finbert_score", "vader_score", "tfidf_score") if col in data and data[col].notna().any()]
+        score_options = {"FinBERT": "finbert_score", "VADER": "vader_score", "TF-IDF baseline": "tfidf_score"}
+        available_names = [name for name, col in score_options.items() if col in score_candidates]
+        selected_model = st.selectbox("Sentiment model", available_names or ["VADER"])
+        selected_score = score_options[selected_model]
+        refresh_requested = st.button("Refresh live data", help="Fetch current headlines, Bluesky posts, and daily prices for this ticker.")
+
+if data.empty:
+    st.info(f"No collected results for {selected_ticker} yet. Collect live data to add it to the dashboard.")
+    if st.button(f"Collect live data for {selected_ticker}", type="primary"):
+        collect_live_data(selected_ticker)
+    st.stop()
 
 if refresh_requested:
     collect_live_data(selected_ticker)
