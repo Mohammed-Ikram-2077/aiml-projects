@@ -20,8 +20,8 @@ After changing the React site, run `npm run build` and commit the updated `dist/
 
 Create an app using:
 
-- Repository: `Mohammed-Ikram-2077/ValoTech`
+- Repository: `Mohammed-Ikram-2077/aiml-projects`
 - Branch: `aussies-cafe`
-- Main file path: `AIML project/project 2/streamlit_app.py`
+- Main file path: `aussies-cafe/streamlit_app.py`
 
-Streamlit reads the Python dependency from `AIML project/project 2/requirements.txt`.
+Streamlit reads the Python dependency from `aussies-cafe/requirements.txt`.
